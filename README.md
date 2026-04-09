@@ -32,16 +32,33 @@ Dependencies are already installed in this workspace, but for a fresh clone:
 npm install
 ```
 
-## Run the app
+## Run with a development build
+
+This project is configured for Expo development builds (`expo-dev-client`).
+
+Build and install a native development client:
+
+```bash
+npm run android
+```
+
+On macOS, you can also run:
+
+```bash
+npm run ios
+```
+
+Then start Metro for the dev client:
 
 ```bash
 npm start
 ```
 
-Then choose:
-- `a` for Android
-- `i` for iOS
-- `w` for web
+If you want Expo Go behavior temporarily, use:
+
+```bash
+npm run start:go
+```
 
 ## Implemented map view
 

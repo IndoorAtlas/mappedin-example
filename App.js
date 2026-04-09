@@ -5,7 +5,6 @@ import {
   View,
   TextInput,
   Pressable,
-  SafeAreaView,
 } from 'react-native';
 import { MapView } from '@mappedin/react-native-sdk';
 
@@ -33,7 +32,7 @@ export default function App() {
 
   if (isMapOpen) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         <View style={styles.mapHeader}>
           <Pressable style={styles.secondaryButton} onPress={() => setIsMapOpen(false)}>
             <Text style={styles.secondaryButtonText}>Back</Text>
@@ -41,12 +40,12 @@ export default function App() {
           <Text style={styles.mapHeaderTitle}>Mappedin Map View</Text>
         </View>
         <MapView mapData={mapCredentials} options={mapOptions} style={styles.map} />
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.homeContainer}>
+    <View style={styles.homeContainer}>
       <View style={styles.card}>
         <Text style={styles.title}>Mappedin Credentials</Text>
         <Text style={styles.text}>Enter your API key, secret, and map ID to open the map.</Text>
@@ -86,7 +85,7 @@ export default function App() {
           <Text style={styles.primaryButtonText}>Open Map View</Text>
         </Pressable>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

@@ -10,13 +10,18 @@ web-build/
 expo-env.d.ts
 
 # Native
-.kotlin/
 *.orig.*
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
+
+# Native build cache folders
+/android/.gradle/
+/android/.kotlin/
+/ios/.gradle/
+/ios/.kotlin/
 
 # Metro
 .metro-health-check*
@@ -37,5 +42,4 @@ yarn-error.*
 *.tsbuildinfo
 
 # generated native folders
-/ios
-/android
+# (tracked in source control)
