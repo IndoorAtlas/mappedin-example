@@ -77,3 +77,33 @@ Map credentials are read from environment variables and passed via:
 
 - If web rendering is needed, this project includes `react-dom` and `react-native-web`.
 - If your environment has native module constraints, use an Expo development build.
+
+## IndoorAtlas SDK integration
+
+IndoorAtlas dependencies and native project wiring were added following:
+
+- https://github.com/IndoorAtlas/sdk-cordova-examples/tree/master/ReactNativeExample#add-indooratlas-to-existing-reactnative-project
+
+### Android
+
+- `react-native-indooratlas` and `@remobile/react-native-cordova` are installed.
+- Manual native linking is configured in:
+	- `android/settings.gradle`
+	- `android/app/build.gradle`
+	- `android/build.gradle`
+	- `android/app/src/main/java/.../MainApplication.kt`
+- Set your IndoorAtlas credentials in `android/app/src/main/AndroidManifest.xml`:
+	- `com.indooratlas.android.sdk.API_KEY`
+	- `com.indooratlas.android.sdk.API_SECRET`
+
+### iOS
+
+- Pod entries were added to `ios/Podfile`:
+	- `RCTCordova`
+	- `RCTIndoorAtlas`
+- Required privacy keys were added to `ios/mappedinindooratlasexample/Info.plist`.
+- On macOS, run CocoaPods in `ios/` after dependency changes.
+
+### Important with Expo prebuild
+
+This project includes native folders in source control. If you run `expo prebuild` again, review/restore any manual IndoorAtlas edits in native files.

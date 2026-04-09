@@ -6,7 +6,7 @@ pluginManagement {
     }.standardOutput.asText.get().trim()
   ).getParentFile().absolutePath
   includeBuild(reactNativeGradlePlugin)
-  
+
   def expoPluginsPath = new File(
     providers.exec {
       workingDir(rootDir)
@@ -37,3 +37,9 @@ expoAutolinking.useExpoVersionCatalog()
 
 include ':app'
 includeBuild(expoAutolinking.reactNativeGradlePlugin)
+
+include ':react-native-cordova'
+project(':react-native-cordova').projectDir = file('../node_modules/@remobile/react-native-cordova/android')
+
+include ':react-native-indooratlas'
+project(':react-native-indooratlas').projectDir = file('../node_modules/react-native-indooratlas/src/android')

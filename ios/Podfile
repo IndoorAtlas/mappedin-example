@@ -7,7 +7,7 @@ podfile_properties = JSON.parse(File.read(File.join(__dir__, 'Podfile.properties
 def ccache_enabled?(podfile_properties)
   # Environment variable takes precedence
   return ENV['USE_CCACHE'] == '1' if ENV['USE_CCACHE']
-  
+
   # Fall back to Podfile properties
   podfile_properties['apple.ccacheEnabled'] == 'true'
 end
@@ -22,6 +22,8 @@ prepare_react_native_project!
 
 target 'mappedinindooratlasexample' do
   use_expo_modules!
+  pod 'RCTCordova', :path => '../node_modules/@remobile/react-native-cordova/ios'
+  pod 'RCTIndoorAtlas', :path => '../node_modules/react-native-indooratlas/src/ios'
 
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
