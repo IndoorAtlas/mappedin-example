@@ -7,9 +7,14 @@ import {
   Pressable,
 } from 'react-native';
 import { MapView, useMap } from '@mappedin/react-native-sdk';
+import { useBlueDot } from '@mappedin/blue-dot/rn';
 import { IndoorAtlas } from 'react-native-indooratlas';
 
 const mapOptions = {};
+const STATIC_BLUE_DOT_COORDINATE = {
+  latitude: 65.06316971,
+  longitude: 25.43794969,
+};
 
 function MapCoordinatesLogger() {
   const { mapData } = useMap();
@@ -26,6 +31,41 @@ function MapCoordinatesLogger() {
 
     console.log('[Mappedin][MapCenter] unavailable in mapData');
   }, [mapData]);
+
+  return null;
+}
+
+function StaticBlueDot() {
+  const { isReady, isEnabled, enable, update } = useBlueDot();
+  const hasAppliedStaticPositionRef = useRef(false);
+
+  useEffect(() => {
+    if (!isReady || hasAppliedStaticPositionRef.current) {
+      return;
+    }
+
+    hasAppliedStaticPositionRef.current = true;
+
+    const applyStaticBlueDot = async () => {
+      try {
+        if (!isEnabled) {
+          await enable({ watchDevicePosition: false });
+        }
+
+        await update({
+          latitude: STATIC_BLUE_DOT_COORDINATE.latitude,
+          longitude: STATIC_BLUE_DOT_COORDINATE.longitude,
+          accuracy: 0,
+        });
+
+        console.log('[Mappedin][BlueDot] static position applied', STATIC_BLUE_DOT_COORDINATE);
+      } catch (error) {
+        console.log('[Mappedin][BlueDot] failed to apply static position', error);
+      }
+    };
+
+    void applyStaticBlueDot();
+  }, [enable, isEnabled, isReady, update]);
 
   return null;
 }
@@ -197,6 +237,7 @@ export default function App() {
           }}
         >
           <MapCoordinatesLogger />
+          <StaticBlueDot />
         </MapView>
         <Pressable style={styles.mapBackButton} onPress={closeMapView}>
           <Text style={styles.secondaryButtonText}>Back</Text>
