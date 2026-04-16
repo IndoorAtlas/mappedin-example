@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,6 +7,7 @@ import {
   Pressable,
 } from 'react-native';
 import { MapView } from '@mappedin/react-native-sdk';
+import { IndoorAtlas } from 'react-native-indooratlas';
 
 const mapOptions = {};
 
@@ -14,11 +15,19 @@ export default function App() {
   const [apiKey, setApiKey] = useState('mik_yeBk0Vf0nNJtpesfu560e07e5');
   const [apiSecret, setApiSecret] = useState('mis_2g9ST8ZcSFb5R9fPnsvYhrX3RyRwPtDGbMGweCYKEq385431022');
   const [mapId, setMapId] = useState('660c0bb9ae0596d87766f2d9');
+  const [indoorAtlasApiKey, setIndoorAtlasApiKey] = useState('169303fc-7f4f-4872-a6d3-8df486800d25');
   const [isMapOpen, setIsMapOpen] = useState(false);
+  const [isPositioning, setIsPositioning] = useState(false);
+  const [positioningStatus, setPositioningStatus] = useState('IndoorAtlas positioning is stopped.');
 
   const hasCredentials = useMemo(
-    () => Boolean(apiKey.trim()) && Boolean(apiSecret.trim()) && Boolean(mapId.trim()),
-    [apiKey, apiSecret, mapId],
+    () => (
+      Boolean(apiKey.trim())
+      && Boolean(apiSecret.trim())
+      && Boolean(mapId.trim())
+      && Boolean(indoorAtlasApiKey.trim())
+    ),
+    [apiKey, apiSecret, mapId, indoorAtlasApiKey],
   );
 
   const mapCredentials = useMemo(
@@ -30,16 +39,88 @@ export default function App() {
     [apiKey, apiSecret, mapId],
   );
 
+  const stopIndoorAtlasPositioning = () => {
+    if (!isPositioning) {
+      return;
+    }
+
+    try {
+      IndoorAtlas.clearWatch();
+      setPositioningStatus('IndoorAtlas positioning stopped.');
+    } catch (error) {
+      setPositioningStatus(`Failed to stop IndoorAtlas: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setIsPositioning(false);
+    }
+  };
+
+  const startIndoorAtlasPositioning = () => {
+    if (isPositioning) {
+      return;
+    }
+
+    const trimmedIndoorAtlasApiKey = indoorAtlasApiKey.trim();
+    if (!trimmedIndoorAtlasApiKey) {
+      setPositioningStatus('Enter IndoorAtlas API key before starting positioning.');
+      return;
+    }
+
+    try {
+      IndoorAtlas.initialize({ apiKey: trimmedIndoorAtlasApiKey });
+      IndoorAtlas.watchPosition(position => {
+        const { latitude, longitude, floor } = position.coords;
+        const floorText = Number.isFinite(floor) ? ` floor ${floor}` : '';
+        setPositioningStatus(
+          `IndoorAtlas running: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}${floorText}`,
+        );
+      });
+      setIsPositioning(true);
+      setPositioningStatus('IndoorAtlas positioning started. Waiting for first position...');
+    } catch (error) {
+      setIsPositioning(false);
+      setPositioningStatus(`Failed to start IndoorAtlas: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const closeMapView = () => {
+    stopIndoorAtlasPositioning();
+    setIsMapOpen(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      try {
+        IndoorAtlas.clearWatch();
+      } catch {
+        // no-op
+      }
+    };
+  }, []);
+
   if (isMapOpen) {
     return (
       <View style={styles.container}>
-        <View style={styles.mapHeader}>
-          <Pressable style={styles.secondaryButton} onPress={() => setIsMapOpen(false)}>
-            <Text style={styles.secondaryButtonText}>Back</Text>
-          </Pressable>
-          <Text style={styles.mapHeaderTitle}>Mappedin Map View</Text>
-        </View>
         <MapView mapData={mapCredentials} options={mapOptions} style={styles.map} />
+        <Pressable style={styles.mapBackButton} onPress={closeMapView}>
+          <Text style={styles.secondaryButtonText}>Back</Text>
+        </Pressable>
+        <View style={styles.mapControls}>
+          <Pressable
+            style={[styles.mapControlButton, isPositioning && styles.mapControlButtonDisabled]}
+            disabled={isPositioning}
+            onPress={startIndoorAtlasPositioning}
+          >
+            <Text style={styles.mapControlButtonText}>Start IndoorAtlas</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.mapControlButton, !isPositioning && styles.mapControlButtonDisabled]}
+            disabled={!isPositioning}
+            onPress={stopIndoorAtlasPositioning}
+          >
+            <Text style={styles.mapControlButtonText}>Stop IndoorAtlas</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.mapStatus}>{positioningStatus}</Text>
       </View>
     );
   }
@@ -75,6 +156,15 @@ export default function App() {
           autoCapitalize="none"
           autoCorrect={false}
           placeholder="Mappedin map ID"
+        />
+
+        <TextInput
+          style={styles.input}
+          value={indoorAtlasApiKey}
+          onChangeText={setIndoorAtlasApiKey}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="IndoorAtlas API key"
         />
 
         <Pressable
@@ -117,20 +207,50 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
-  mapHeader: {
+  mapBackButton: {
+    position: 'absolute',
+    top: 56,
+    left: 12,
+    zIndex: 1,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  mapControls: {
+    position: 'absolute',
+    top: 56,
+    right: 12,
+    zIndex: 1,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  mapControlButton: {
+    backgroundColor: '#1d4ed8',
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
   },
-  mapHeaderTitle: {
-    fontSize: 16,
+  mapControlButtonDisabled: {
+    backgroundColor: '#94a3b8',
+  },
+  mapControlButtonText: {
+    color: '#fff',
     fontWeight: '600',
+    fontSize: 13,
+  },
+  mapStatus: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 104,
+    zIndex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
     color: '#0f172a',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
   },
   title: {
     fontSize: 22,
@@ -165,12 +285,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '600',
-  },
-  secondaryButton: {
-    backgroundColor: '#e2e8f0',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
   },
   secondaryButtonText: {
     color: '#0f172a',
