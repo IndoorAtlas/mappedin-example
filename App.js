@@ -12,9 +12,12 @@ import { IndoorAtlas } from 'react-native-indooratlas';
 const mapOptions = {};
 
 export default function App() {
-  const [apiKey, setApiKey] = useState('mik_yeBk0Vf0nNJtpesfu560e07e5');
-  const [apiSecret, setApiSecret] = useState('mis_2g9ST8ZcSFb5R9fPnsvYhrX3RyRwPtDGbMGweCYKEq385431022');
-  const [mapId, setMapId] = useState('660c0bb9ae0596d87766f2d9');
+  // const [apiKey, setApiKey] = useState('mik_yeBk0Vf0nNJtpesfu560e07e5');
+  const [apiKey, setApiKey] = useState('67c08eedc34ac286d9a9c1dc');
+  // const [apiSecret, setApiSecret] = useState('mis_2g9ST8ZcSFb5R9fPnsvYhrX3RyRwPtDGbMGweCYKEq385431022');
+  const [apiSecret, setApiSecret] = useState('mp1onbplXoRe8rX4pAeHgVpjUKGIdkg8Vnluv4ijrcrvNeYr');
+  // const [mapId, setMapId] = useState('660c0bb9ae0596d87766f2d9');
+  const [mapId, setMapId] = useState('67bf0d53679a9d000bfacd5f');
   const [indoorAtlasApiKey, setIndoorAtlasApiKey] = useState('169303fc-7f4f-4872-a6d3-8df486800d25');
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [isPositioning, setIsPositioning] = useState(false);
@@ -98,6 +101,22 @@ export default function App() {
         }
       });
 
+      IndoorAtlas.watchVenue(venue => {
+        if (runToken !== positioningRunTokenRef.current) {
+          return;
+        }
+
+        console.log('[IndoorAtlas][Venue]', JSON.stringify(venue));
+      });
+
+      IndoorAtlas.watchFloorPlan(floorPlan => {
+        if (runToken !== positioningRunTokenRef.current) {
+          return;
+        }
+
+        console.log('[IndoorAtlas][FloorPlan]', JSON.stringify(floorPlan));
+      });
+
       IndoorAtlas.initialize({ apiKey: trimmedIndoorAtlasApiKey });
       IndoorAtlas.watchPosition(position => {
         if (runToken !== positioningRunTokenRef.current) {
@@ -105,6 +124,11 @@ export default function App() {
         }
 
         const { latitude, longitude, floor } = position.coords;
+        console.log('[IndoorAtlas][Position]', {
+          latitude,
+          longitude,
+          floor,
+        });
         const floorText = Number.isFinite(floor) ? ` floor ${floor}` : '';
         setPositioningStatus(
           `IndoorAtlas running: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}${floorText}`,
