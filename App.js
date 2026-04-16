@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -18,7 +18,10 @@ export default function App() {
   const [indoorAtlasApiKey, setIndoorAtlasApiKey] = useState('169303fc-7f4f-4872-a6d3-8df486800d25');
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [isPositioning, setIsPositioning] = useState(false);
+  const [canSafelyStopPositioning, setCanSafelyStopPositioning] = useState(false);
   const [positioningStatus, setPositioningStatus] = useState('IndoorAtlas positioning is stopped.');
+  const positioningRunTokenRef = useRef(0);
+  const canSafelyStopRef = useRef(false);
 
   const hasCredentials = useMemo(
     () => (
@@ -39,18 +42,30 @@ export default function App() {
     [apiKey, apiSecret, mapId],
   );
 
+  useEffect(() => {
+    canSafelyStopRef.current = canSafelyStopPositioning;
+  }, [canSafelyStopPositioning]);
+
   const stopIndoorAtlasPositioning = () => {
     if (!isPositioning) {
       return;
     }
 
+    positioningRunTokenRef.current += 1;
+
     try {
-      IndoorAtlas.clearWatch();
-      setPositioningStatus('IndoorAtlas positioning stopped.');
+      if (canSafelyStopRef.current) {
+        IndoorAtlas.clearWatch();
+        setPositioningStatus('IndoorAtlas positioning stopped.');
+      } else {
+        IndoorAtlas.removeStatusCallback();
+        setPositioningStatus('IndoorAtlas stop requested before initialization completed.');
+      }
     } catch (error) {
       setPositioningStatus(`Failed to stop IndoorAtlas: ${error?.message || 'Unknown error'}`);
     } finally {
       setIsPositioning(false);
+      setCanSafelyStopPositioning(false);
     }
   };
 
@@ -66,18 +81,42 @@ export default function App() {
     }
 
     try {
+      const runToken = positioningRunTokenRef.current + 1;
+      positioningRunTokenRef.current = runToken;
+
+      IndoorAtlas.onStatusChanged(status => {
+        if (runToken !== positioningRunTokenRef.current) {
+          return;
+        }
+
+        const statusName = status?.name || 'UNKNOWN';
+        const statusMessage = status?.message ? ` (${status.message})` : '';
+        setPositioningStatus(`IndoorAtlas status: ${statusName}${statusMessage}`);
+
+        if (statusName === 'AVAILABLE') {
+          setCanSafelyStopPositioning(true);
+        }
+      });
+
       IndoorAtlas.initialize({ apiKey: trimmedIndoorAtlasApiKey });
       IndoorAtlas.watchPosition(position => {
+        if (runToken !== positioningRunTokenRef.current) {
+          return;
+        }
+
         const { latitude, longitude, floor } = position.coords;
         const floorText = Number.isFinite(floor) ? ` floor ${floor}` : '';
         setPositioningStatus(
           `IndoorAtlas running: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}${floorText}`,
         );
+        setCanSafelyStopPositioning(true);
       });
       setIsPositioning(true);
-      setPositioningStatus('IndoorAtlas positioning started. Waiting for first position...');
+      setCanSafelyStopPositioning(false);
+      setPositioningStatus('IndoorAtlas initialization started. Waiting for status...');
     } catch (error) {
       setIsPositioning(false);
+      setCanSafelyStopPositioning(false);
       setPositioningStatus(`Failed to start IndoorAtlas: ${error?.message || 'Unknown error'}`);
     }
   };
@@ -89,8 +128,14 @@ export default function App() {
 
   useEffect(() => {
     return () => {
+      positioningRunTokenRef.current += 1;
+
       try {
-        IndoorAtlas.clearWatch();
+        if (canSafelyStopRef.current) {
+          IndoorAtlas.clearWatch();
+        } else {
+          IndoorAtlas.removeStatusCallback();
+        }
       } catch {
         // no-op
       }
