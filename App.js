@@ -11,10 +11,13 @@ import { useBlueDot } from '@mappedin/blue-dot/rn';
 import { IndoorAtlas } from 'react-native-indooratlas';
 
 const mapOptions = {};
+const BLUE_DOT_SOUTH_STEP_METERS = 2;
 const STATIC_BLUE_DOT_COORDINATE = {
   latitude: 65.06316971,
   longitude: 25.43794969,
 };
+
+const metersToLatitudeDelta = meters => meters / 111320;
 
 function MapCoordinatesLogger() {
   const { mapData } = useMap();
@@ -35,37 +38,39 @@ function MapCoordinatesLogger() {
   return null;
 }
 
-function StaticBlueDot() {
+function StaticBlueDot({ coordinate }) {
   const { isReady, isEnabled, enable, update } = useBlueDot();
-  const hasAppliedStaticPositionRef = useRef(false);
+  const isUpdatingRef = useRef(false);
 
   useEffect(() => {
-    if (!isReady || hasAppliedStaticPositionRef.current) {
+    if (!isReady || isUpdatingRef.current) {
       return;
     }
 
-    hasAppliedStaticPositionRef.current = true;
+    isUpdatingRef.current = true;
 
-    const applyStaticBlueDot = async () => {
+    const syncBlueDot = async () => {
       try {
         if (!isEnabled) {
           await enable({ watchDevicePosition: false });
         }
 
         await update({
-          latitude: STATIC_BLUE_DOT_COORDINATE.latitude,
-          longitude: STATIC_BLUE_DOT_COORDINATE.longitude,
-          accuracy: 0,
+          latitude: coordinate.latitude,
+          longitude: coordinate.longitude,
+          accuracy: 10,
         });
 
-        console.log('[Mappedin][BlueDot] static position applied', STATIC_BLUE_DOT_COORDINATE);
+        console.log('[Mappedin][BlueDot] position applied', coordinate);
       } catch (error) {
-        console.log('[Mappedin][BlueDot] failed to apply static position', error);
+        console.log('[Mappedin][BlueDot] failed to apply position', error);
+      } finally {
+        isUpdatingRef.current = false;
       }
     };
 
-    void applyStaticBlueDot();
-  }, [enable, isEnabled, isReady, update]);
+    void syncBlueDot();
+  }, [coordinate, enable, isEnabled, isReady, update]);
 
   return null;
 }
@@ -78,6 +83,7 @@ export default function App() {
   // const [mapId, setMapId] = useState('660c0bb9ae0596d87766f2d9');
   const [mapId, setMapId] = useState('67bf0d53679a9d000bfacd5f');
   const [indoorAtlasApiKey, setIndoorAtlasApiKey] = useState('169303fc-7f4f-4872-a6d3-8df486800d25');
+  const [blueDotCoordinate, setBlueDotCoordinate] = useState(STATIC_BLUE_DOT_COORDINATE);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [isPositioning, setIsPositioning] = useState(false);
   const [canSafelyStopPositioning, setCanSafelyStopPositioning] = useState(false);
@@ -182,6 +188,11 @@ export default function App() {
           return;
         }
 
+        setBlueDotCoordinate(previousCoordinate => ({
+          latitude: previousCoordinate.latitude - metersToLatitudeDelta(BLUE_DOT_SOUTH_STEP_METERS),
+          longitude: previousCoordinate.longitude,
+        }));
+
         const { latitude, longitude, floor } = position.coords;
         console.log('[IndoorAtlas][Position]', {
           latitude,
@@ -237,7 +248,7 @@ export default function App() {
           }}
         >
           <MapCoordinatesLogger />
-          <StaticBlueDot />
+          <StaticBlueDot coordinate={blueDotCoordinate} />
         </MapView>
         <Pressable style={styles.mapBackButton} onPress={closeMapView}>
           <Text style={styles.secondaryButtonText}>Back</Text>
