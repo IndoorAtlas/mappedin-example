@@ -6,10 +6,29 @@ import {
   TextInput,
   Pressable,
 } from 'react-native';
-import { MapView } from '@mappedin/react-native-sdk';
+import { MapView, useMap } from '@mappedin/react-native-sdk';
 import { IndoorAtlas } from 'react-native-indooratlas';
 
 const mapOptions = {};
+
+function MapCoordinatesLogger() {
+  const { mapData } = useMap();
+
+  useEffect(() => {
+    const center = mapData?.mapCenter;
+    if (center && Number.isFinite(center.latitude) && Number.isFinite(center.longitude)) {
+      console.log('[Mappedin][MapCenter]', {
+        latitude: center.latitude,
+        longitude: center.longitude,
+      });
+      return;
+    }
+
+    console.log('[Mappedin][MapCenter] unavailable in mapData');
+  }, [mapData]);
+
+  return null;
+}
 
 export default function App() {
   // const [apiKey, setApiKey] = useState('mik_yeBk0Vf0nNJtpesfu560e07e5');
@@ -169,7 +188,16 @@ export default function App() {
   if (isMapOpen) {
     return (
       <View style={styles.container}>
-        <MapView mapData={mapCredentials} options={mapOptions} style={styles.map} />
+        <MapView
+          mapData={mapCredentials}
+          options={mapOptions}
+          style={styles.map}
+          onMapReady={() => {
+            console.log('[Mappedin] onMapReady');
+          }}
+        >
+          <MapCoordinatesLogger />
+        </MapView>
         <Pressable style={styles.mapBackButton} onPress={closeMapView}>
           <Text style={styles.secondaryButtonText}>Back</Text>
         </Pressable>
