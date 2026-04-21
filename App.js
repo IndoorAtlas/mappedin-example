@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,13 +11,10 @@ import { useBlueDot } from '@mappedin/blue-dot/rn';
 import { IndoorAtlas } from 'react-native-indooratlas';
 
 const mapOptions = {};
-const BLUE_DOT_SOUTH_STEP_METERS = 2;
 const STATIC_BLUE_DOT_COORDINATE = {
   latitude: 65.06316971,
   longitude: 25.43794969,
 };
-
-const metersToLatitudeDelta = meters => meters / 111320;
 
 function MapCoordinatesLogger() {
   const { mapData } = useMap();
@@ -35,7 +32,62 @@ function MapCoordinatesLogger() {
     console.log('[Mappedin][MapCenter] unavailable in mapData');
   }, [mapData]);
 
+  useEffect(() => {
+    const floors = mapData.getByType('floor');
+    console.log('[Mappedin][Floors]', floors.map(f => ({ id: f.id, name: f.name, shortName: f.shortName, elevation: f.elevation })));
+  }, [mapData]);
+
   return null;
+}
+
+function FloorSelector() {
+  const { mapData, mapView } = useMap();
+  const [selectedFloorId, setSelectedFloorId] = useState(null);
+
+  const floors = useMemo(() => mapData.getByType('floor'), [mapData]);
+
+  useEffect(() => {
+    if (floors.length > 0 && selectedFloorId === null) {
+      setSelectedFloorId(floors[0].id);
+    }
+  }, [floors, selectedFloorId]);
+
+  const selectFloor = useCallback(async (floor) => {
+    setSelectedFloorId(floor.id);
+    try {
+      await mapView.setFloor(floor.id);
+    } catch (error) {
+      console.log('[Mappedin][FloorSelector] failed to set floor', error);
+    }
+  }, [mapView]);
+
+  if (floors.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.floorSelector}>
+      {[...floors].reverse().map(floor => (
+        <Pressable
+          key={floor.id}
+          style={[
+            styles.floorButton,
+            selectedFloorId === floor.id && styles.floorButtonActive,
+          ]}
+          onPress={() => selectFloor(floor)}
+        >
+          <Text
+            style={[
+              styles.floorButtonText,
+              selectedFloorId === floor.id && styles.floorButtonTextActive,
+            ]}
+          >
+            {floor.shortName || floor.name}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
 }
 
 function StaticBlueDot({ coordinate }) {
@@ -58,7 +110,7 @@ function StaticBlueDot({ coordinate }) {
         await update({
           latitude: coordinate.latitude,
           longitude: coordinate.longitude,
-          accuracy: 10,
+          accuracy: coordinate.accuracy ?? 10,
         });
 
         console.log('[Mappedin][BlueDot] position applied', coordinate);
@@ -188,12 +240,8 @@ export default function App() {
           return;
         }
 
-        setBlueDotCoordinate(previousCoordinate => ({
-          latitude: previousCoordinate.latitude - metersToLatitudeDelta(BLUE_DOT_SOUTH_STEP_METERS),
-          longitude: previousCoordinate.longitude,
-        }));
-
-        const { latitude, longitude, floor } = position.coords;
+        const { latitude, longitude, accuracy, floor } = position.coords;
+        setBlueDotCoordinate({ latitude, longitude, accuracy });
         console.log('[IndoorAtlas][Position]', {
           latitude,
           longitude,
@@ -249,6 +297,7 @@ export default function App() {
         >
           <MapCoordinatesLogger />
           <StaticBlueDot coordinate={blueDotCoordinate} />
+          <FloorSelector />
         </MapView>
         <Pressable style={styles.mapBackButton} onPress={closeMapView}>
           <Text style={styles.secondaryButtonText}>Back</Text>
@@ -278,7 +327,6 @@ export default function App() {
     <View style={styles.homeContainer}>
       <View style={styles.card}>
         <Text style={styles.title}>Mappedin Credentials</Text>
-        <Text style={styles.text}>Enter your API key, secret, and map ID to open the map.</Text>
 
         <TextInput
           style={styles.input}
@@ -287,6 +335,7 @@ export default function App() {
           autoCapitalize="none"
           autoCorrect={false}
           placeholder="Mappedin API key"
+          placeholderTextColor="#94a3b8"
         />
 
         <TextInput
@@ -296,6 +345,7 @@ export default function App() {
           autoCapitalize="none"
           autoCorrect={false}
           placeholder="Mappedin API secret"
+          placeholderTextColor="#94a3b8"
         />
 
         <TextInput
@@ -305,7 +355,11 @@ export default function App() {
           autoCapitalize="none"
           autoCorrect={false}
           placeholder="Mappedin map ID"
+          placeholderTextColor="#94a3b8"
         />
+
+        <View style={styles.divider} />
+        <Text style={styles.subheader}>IndoorAtlas Credentials</Text>
 
         <TextInput
           style={styles.input}
@@ -314,6 +368,7 @@ export default function App() {
           autoCapitalize="none"
           autoCorrect={false}
           placeholder="IndoorAtlas API key"
+          placeholderTextColor="#94a3b8"
         />
 
         <Pressable
@@ -406,6 +461,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0f172a',
   },
+  subheader: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#e2e8f0',
+    marginVertical: 4,
+  },
   text: {
     fontSize: 14,
     color: '#334155',
@@ -419,6 +484,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
+    color: '#0f172a',
   },
   primaryButton: {
     marginTop: 4,
@@ -438,5 +504,35 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: '#0f172a',
     fontWeight: '600',
+  },
+  floorSelector: {
+    position: 'absolute',
+    right: 12,
+    bottom: 40,
+    zIndex: 1,
+    gap: 4,
+  },
+  floorButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 8,
+    minWidth: 64,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  floorButtonActive: {
+    backgroundColor: '#1d4ed8',
+    borderColor: '#1d4ed8',
+  },
+  floorButtonText: {
+    color: '#0f172a',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  floorButtonTextActive: {
+    color: '#fff',
   },
 });
