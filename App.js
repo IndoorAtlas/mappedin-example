@@ -1,0 +1,553 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  TextInput,
+  Pressable,
+} from 'react-native';
+import { MapView, useMap } from '@mappedin/react-native-sdk';
+import { useBlueDot } from '@mappedin/blue-dot/rn';
+import { IndoorAtlas } from 'react-native-indooratlas';
+
+const mapOptions = {};
+const STATIC_BLUE_DOT_COORDINATE = {
+  latitude: 65.06316971,
+  longitude: 25.43794969,
+};
+
+function MapCoordinatesLogger() {
+  const { mapData } = useMap();
+
+  useEffect(() => {
+    const center = mapData?.mapCenter;
+    if (center && Number.isFinite(center.latitude) && Number.isFinite(center.longitude)) {
+      console.log('[Mappedin][MapCenter]', {
+        latitude: center.latitude,
+        longitude: center.longitude,
+      });
+      return;
+    }
+
+    console.log('[Mappedin][MapCenter] unavailable in mapData');
+  }, [mapData]);
+
+  useEffect(() => {
+    const floors = mapData.getByType('floor');
+    console.log('[Mappedin][Floors]', floors);
+  }, [mapData]);
+
+  return null;
+}
+
+function FloorSelector({ iaFloorNumber }) {
+  const { mapData, mapView } = useMap();
+  const [selectedFloorId, setSelectedFloorId] = useState(null);
+
+  const floors = useMemo(() => mapData.getByType('floor'), [mapData]);
+
+  useEffect(() => {
+    if (floors.length > 0 && selectedFloorId === null) {
+      setSelectedFloorId(floors[0].id);
+    }
+  }, [floors, selectedFloorId]);
+
+  useEffect(() => {
+    if (iaFloorNumber === null || iaFloorNumber === undefined) {
+      return;
+    }
+    const regex = new RegExp(`\\bLevel\\s+${iaFloorNumber}\\b`, 'i');
+    const match = floors.find(floor => regex.test(floor.name));
+    if (!match) {
+      console.log(`[IndoorAtlas][FloorSync] no floor matching "Level ${iaFloorNumber}"`);
+      return;
+    }
+    selectFloor(match);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [iaFloorNumber]);
+
+  const selectFloor = useCallback(async (floor) => {
+    setSelectedFloorId(floor.id);
+    try {
+      await mapView.setFloor(floor.id);
+    } catch (error) {
+      console.log('[Mappedin][FloorSelector] failed to set floor', error);
+    }
+  }, [mapView]);
+
+  if (floors.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.floorSelector}>
+      {[...floors].reverse().map(floor => (
+        <Pressable
+          key={floor.id}
+          style={[
+            styles.floorButton,
+            selectedFloorId === floor.id && styles.floorButtonActive,
+          ]}
+          onPress={() => selectFloor(floor)}
+        >
+          <Text
+            style={[
+              styles.floorButtonText,
+              selectedFloorId === floor.id && styles.floorButtonTextActive,
+            ]}
+          >
+            {floor.shortName || floor.name}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function StaticBlueDot({ coordinate }) {
+  const { isReady, isEnabled, enable, update } = useBlueDot();
+  const isUpdatingRef = useRef(false);
+
+  useEffect(() => {
+    if (!isReady || isUpdatingRef.current) {
+      return;
+    }
+
+    isUpdatingRef.current = true;
+
+    const syncBlueDot = async () => {
+      try {
+        if (!isEnabled) {
+          await enable({ watchDevicePosition: false });
+        }
+
+        await update({
+          latitude: coordinate.latitude,
+          longitude: coordinate.longitude,
+          accuracy: coordinate.accuracy ?? 10,
+        });
+
+        console.log('[Mappedin][BlueDot] position applied', coordinate);
+      } catch (error) {
+        console.log('[Mappedin][BlueDot] failed to apply position', error);
+      } finally {
+        isUpdatingRef.current = false;
+      }
+    };
+
+    void syncBlueDot();
+  }, [coordinate, enable, isEnabled, isReady, update]);
+
+  return null;
+}
+
+export default function App() {
+  const [apiKey, setApiKey] = useState(process.env.EXPO_PUBLIC_MAPPEDIN_API_KEY ?? '');
+  const [apiSecret, setApiSecret] = useState(process.env.EXPO_PUBLIC_MAPPEDIN_API_SECRET ?? '');
+  const [mapId, setMapId] = useState(process.env.EXPO_PUBLIC_MAPPEDIN_MAP_ID ?? '');
+  const [indoorAtlasApiKey, setIndoorAtlasApiKey] = useState(process.env.EXPO_PUBLIC_INDOORATLAS_API_KEY ?? '');
+  const [blueDotCoordinate, setBlueDotCoordinate] = useState(STATIC_BLUE_DOT_COORDINATE);
+  const [iaFloorNumber, setIaFloorNumber] = useState(null);
+  const [isMapOpen, setIsMapOpen] = useState(false);
+  const [isPositioning, setIsPositioning] = useState(false);
+  const [canSafelyStopPositioning, setCanSafelyStopPositioning] = useState(false);
+  const [positioningStatus, setPositioningStatus] = useState('IndoorAtlas positioning is stopped.');
+  const positioningRunTokenRef = useRef(0);
+  const canSafelyStopRef = useRef(false);
+
+  const hasCredentials = useMemo(
+    () => (
+      Boolean(apiKey.trim())
+      && Boolean(apiSecret.trim())
+      && Boolean(mapId.trim())
+      && Boolean(indoorAtlasApiKey.trim())
+    ),
+    [apiKey, apiSecret, mapId, indoorAtlasApiKey],
+  );
+
+  const mapCredentials = useMemo(
+    () => ({
+      key: apiKey.trim(),
+      secret: apiSecret.trim(),
+      mapId: mapId.trim(),
+    }),
+    [apiKey, apiSecret, mapId],
+  );
+
+  useEffect(() => {
+    canSafelyStopRef.current = canSafelyStopPositioning;
+  }, [canSafelyStopPositioning]);
+
+  const stopIndoorAtlasPositioning = () => {
+    if (!isPositioning) {
+      return;
+    }
+
+    positioningRunTokenRef.current += 1;
+
+    try {
+      if (canSafelyStopRef.current) {
+        IndoorAtlas.clearWatch();
+        setPositioningStatus('IndoorAtlas positioning stopped.');
+      } else {
+        IndoorAtlas.removeStatusCallback();
+        setPositioningStatus('IndoorAtlas stop requested before initialization completed.');
+      }
+    } catch (error) {
+      setPositioningStatus(`Failed to stop IndoorAtlas: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setIsPositioning(false);
+      setCanSafelyStopPositioning(false);
+    }
+  };
+
+  const startIndoorAtlasPositioning = () => {
+    if (isPositioning) {
+      return;
+    }
+
+    const trimmedIndoorAtlasApiKey = indoorAtlasApiKey.trim();
+    if (!trimmedIndoorAtlasApiKey) {
+      setPositioningStatus('Enter IndoorAtlas API key before starting positioning.');
+      return;
+    }
+
+    try {
+      const runToken = positioningRunTokenRef.current + 1;
+      positioningRunTokenRef.current = runToken;
+
+      IndoorAtlas.onStatusChanged(status => {
+        if (runToken !== positioningRunTokenRef.current) {
+          return;
+        }
+
+        const statusName = status?.name || 'UNKNOWN';
+        const statusMessage = status?.message ? ` (${status.message})` : '';
+        setPositioningStatus(`IndoorAtlas status: ${statusName}${statusMessage}`);
+
+        if (statusName === 'AVAILABLE') {
+          setCanSafelyStopPositioning(true);
+        }
+      });
+
+      IndoorAtlas.watchVenue(venue => {
+        if (runToken !== positioningRunTokenRef.current) {
+          return;
+        }
+
+        console.log('[IndoorAtlas][Venue]', JSON.stringify(venue));
+      });
+
+      IndoorAtlas.watchFloorPlan(floorPlan => {
+        if (runToken !== positioningRunTokenRef.current) {
+          return;
+        }
+
+        console.log('[IndoorAtlas][FloorPlan]', JSON.stringify(floorPlan));
+      });
+
+      IndoorAtlas.initialize({ apiKey: trimmedIndoorAtlasApiKey });
+      IndoorAtlas.watchPosition(position => {
+        if (runToken !== positioningRunTokenRef.current) {
+          return;
+        }
+
+        const { latitude, longitude, accuracy, floor } = position.coords;
+        setBlueDotCoordinate({ latitude, longitude, accuracy });
+        if (Number.isFinite(floor)) {
+          setIaFloorNumber(floor);
+        }
+        console.log('[IndoorAtlas][Position]', {
+          latitude,
+          longitude,
+          floor,
+        });
+        const floorText = Number.isFinite(floor) ? ` floor ${floor}` : '';
+        setPositioningStatus(
+          `IndoorAtlas running: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}${floorText}`,
+        );
+        setCanSafelyStopPositioning(true);
+      });
+      setIsPositioning(true);
+      setCanSafelyStopPositioning(false);
+      setPositioningStatus('IndoorAtlas initialization started. Waiting for status...');
+    } catch (error) {
+      setIsPositioning(false);
+      setCanSafelyStopPositioning(false);
+      setPositioningStatus(`Failed to start IndoorAtlas: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const closeMapView = () => {
+    stopIndoorAtlasPositioning();
+    setIsMapOpen(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      positioningRunTokenRef.current += 1;
+
+      try {
+        if (canSafelyStopRef.current) {
+          IndoorAtlas.clearWatch();
+        } else {
+          IndoorAtlas.removeStatusCallback();
+        }
+      } catch {
+        // no-op
+      }
+    };
+  }, []);
+
+  if (isMapOpen) {
+    return (
+      <View style={styles.container}>
+        <MapView
+          mapData={mapCredentials}
+          options={mapOptions}
+          style={styles.map}
+          onMapReady={() => {
+            console.log('[Mappedin] onMapReady');
+          }}
+        >
+          <MapCoordinatesLogger />
+          <StaticBlueDot coordinate={blueDotCoordinate} />
+          <FloorSelector iaFloorNumber={iaFloorNumber} />
+        </MapView>
+        <Pressable style={styles.mapBackButton} onPress={closeMapView}>
+          <Text style={styles.secondaryButtonText}>Back</Text>
+        </Pressable>
+        <View style={styles.mapControls}>
+          <Pressable
+            style={[styles.mapControlButton, isPositioning && styles.mapControlButtonDisabled]}
+            disabled={isPositioning}
+            onPress={startIndoorAtlasPositioning}
+          >
+            <Text style={styles.mapControlButtonText}>Start IndoorAtlas</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.mapControlButton, !isPositioning && styles.mapControlButtonDisabled]}
+            disabled={!isPositioning}
+            onPress={stopIndoorAtlasPositioning}
+          >
+            <Text style={styles.mapControlButtonText}>Stop IndoorAtlas</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.mapStatus}>{positioningStatus}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.homeContainer}>
+      <View style={styles.card}>
+        <Text style={styles.title}>Mappedin Credentials</Text>
+
+        <TextInput
+          style={styles.input}
+          value={apiKey}
+          onChangeText={setApiKey}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="Mappedin API key"
+          placeholderTextColor="#94a3b8"
+        />
+
+        <TextInput
+          style={styles.input}
+          value={apiSecret}
+          onChangeText={setApiSecret}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="Mappedin API secret"
+          placeholderTextColor="#94a3b8"
+        />
+
+        <TextInput
+          style={styles.input}
+          value={mapId}
+          onChangeText={setMapId}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="Mappedin map ID"
+          placeholderTextColor="#94a3b8"
+        />
+
+        <View style={styles.divider} />
+        <Text style={styles.subheader}>IndoorAtlas Credentials</Text>
+
+        <TextInput
+          style={styles.input}
+          value={indoorAtlasApiKey}
+          onChangeText={setIndoorAtlasApiKey}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="IndoorAtlas API key"
+          placeholderTextColor="#94a3b8"
+        />
+
+        <Pressable
+          style={[styles.primaryButton, !hasCredentials && styles.primaryButtonDisabled]}
+          disabled={!hasCredentials}
+          onPress={() => setIsMapOpen(true)}
+        >
+          <Text style={styles.primaryButtonText}>Open Map View</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f0f8ff',
+  },
+  homeContainer: {
+    flex: 1,
+    backgroundColor: '#f0f8ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 560,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  map: {
+    flex: 1,
+  },
+  mapBackButton: {
+    position: 'absolute',
+    top: 56,
+    left: 12,
+    zIndex: 1,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  mapControls: {
+    position: 'absolute',
+    top: 56,
+    right: 12,
+    zIndex: 1,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  mapControlButton: {
+    backgroundColor: '#1d4ed8',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  mapControlButtonDisabled: {
+    backgroundColor: '#94a3b8',
+  },
+  mapControlButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  mapStatus: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 104,
+    zIndex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    color: '#0f172a',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  subheader: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#e2e8f0',
+    marginVertical: 4,
+  },
+  text: {
+    fontSize: 14,
+    color: '#334155',
+    lineHeight: 20,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#0f172a',
+  },
+  primaryButton: {
+    marginTop: 4,
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  primaryButtonDisabled: {
+    backgroundColor: '#94a3b8',
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  secondaryButtonText: {
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+  floorSelector: {
+    position: 'absolute',
+    right: 12,
+    bottom: 40,
+    zIndex: 1,
+    gap: 4,
+  },
+  floorButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 8,
+    minWidth: 64,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  floorButtonActive: {
+    backgroundColor: '#1d4ed8',
+    borderColor: '#1d4ed8',
+  },
+  floorButtonText: {
+    color: '#0f172a',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  floorButtonTextActive: {
+    color: '#fff',
+  },
+});
