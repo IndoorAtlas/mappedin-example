@@ -6,7 +6,7 @@ import {
   TextInput,
   Pressable,
 } from 'react-native';
-import { MapView, useMap } from '@mappedin/react-native-sdk';
+import { MapView, Marker, Path, useMap, useMapViewEvent } from '@mappedin/react-native-sdk';
 import { useBlueDot } from '@mappedin/blue-dot/rn';
 import { IndoorAtlas } from 'react-native-indooratlas';
 
@@ -104,7 +104,139 @@ function FloorSelector({ iaFloorNumber }) {
   );
 }
 
-function StaticBlueDot({ coordinate }) {
+function FloorPOIs({ blueDotCoordinate }) {
+  const { mapData, mapView } = useMap();
+  const [currentFloorId, setCurrentFloorId] = useState(
+    () => mapView?.currentFloor?.id ?? null,
+  );
+  const [routeCoordinates, setRouteCoordinates] = useState(null);
+
+  const markerPoiRef = useRef(new Map());
+  const blueDotRef = useRef(blueDotCoordinate);
+  const floorIdRef = useRef(currentFloorId);
+  const routeSeqRef = useRef(0);
+
+  useEffect(() => {
+    blueDotRef.current = blueDotCoordinate;
+  }, [blueDotCoordinate]);
+
+  useEffect(() => {
+    floorIdRef.current = currentFloorId;
+  }, [currentFloorId]);
+
+  useEffect(() => {
+    if (currentFloorId === null && mapView?.currentFloor?.id) {
+      setCurrentFloorId(mapView.currentFloor.id);
+    }
+  }, [currentFloorId, mapView]);
+
+  useMapViewEvent('floor-change', (payload) => {
+    const floorId = payload?.floor?.id ?? null;
+    if (floorId) {
+      setCurrentFloorId(floorId);
+    }
+  });
+
+  const pois = useMemo(() => {
+    const allPois = mapData.getByType('point-of-interest');
+    if (!currentFloorId) {
+      return allPois;
+    }
+    return allPois.filter((poi) => {
+      try {
+        return poi.floor?.id === currentFloorId;
+      } catch {
+        return false;
+      }
+    });
+  }, [mapData, currentFloorId]);
+
+  useEffect(() => {
+    console.log(`[Mappedin][POIs] showing ${pois.length} POIs on floor ${currentFloorId ?? 'unknown'}`);
+  }, [pois, currentFloorId]);
+
+  const routeToPoi = useCallback(async (poi) => {
+    const from = blueDotRef.current;
+    if (!from || !Number.isFinite(from.latitude) || !Number.isFinite(from.longitude)) {
+      console.log('[Mappedin][Wayfinding] no blue dot location available yet');
+      return;
+    }
+
+    const seq = routeSeqRef.current + 1;
+    routeSeqRef.current = seq;
+
+    try {
+      const floor = mapData
+        .getByType('floor')
+        .find((f) => f.id === floorIdRef.current);
+      const origin = await mapView.createCoordinate(
+        from.latitude,
+        from.longitude,
+        floor,
+      );
+      const directions = await mapView.getDirections(origin, poi);
+
+      if (seq !== routeSeqRef.current) {
+        return;
+      }
+
+      if (!directions || !directions.coordinates?.length) {
+        console.log(`[Mappedin][Wayfinding] no route found to "${poi.name ?? ''}"`);
+        setRouteCoordinates(null);
+        return;
+      }
+
+      console.log(
+        `[Mappedin][Wayfinding] route to "${poi.name ?? ''}": ${directions.coordinates.length} points, ${
+          directions.distance != null ? `${directions.distance.toFixed(1)}m` : 'unknown distance'
+        }`,
+      );
+      setRouteCoordinates(directions.coordinates);
+    } catch (error) {
+      console.log('[Mappedin][Wayfinding] failed to get directions', error);
+    }
+  }, [mapData, mapView]);
+
+  const handleClick = useCallback((payload) => {
+    const clickedMarker = payload?.markers?.[0];
+    if (!clickedMarker) {
+      return;
+    }
+    const poi = markerPoiRef.current.get(String(clickedMarker.id));
+    if (poi) {
+      routeToPoi(poi);
+    }
+  }, [routeToPoi]);
+
+  useMapViewEvent('click', handleClick);
+
+  return (
+    <>
+      {pois.map((poi) => (
+        <Marker
+          key={poi.id}
+          target={poi}
+          html={`<div style="background:#2563eb;color:#fff;padding:4px 8px;border-radius:12px;font-size:12px;font-family:sans-serif;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.3);">${poi.name ?? ''}</div>`}
+          options={{ interactive: true, rank: 'high' }}
+          onLoad={(marker) => {
+            if (marker?.id != null) {
+              markerPoiRef.current.set(String(marker.id), poi);
+            }
+          }}
+        />
+      ))}
+      {routeCoordinates ? (
+        <Path
+          coordinate={routeCoordinates}
+          options={{ color: '#2563eb', nearRadius: 0.5, farRadius: 0.5 }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function StaticBlueDot({ coordinate, iaFloorNumber }) {
+  const { mapData, mapView } = useMap();
   const { isReady, isEnabled, enable, update } = useBlueDot();
   const isUpdatingRef = useRef(false);
 
@@ -313,6 +445,7 @@ export default function App() {
           <MapCoordinatesLogger />
           <StaticBlueDot coordinate={blueDotCoordinate} />
           <FloorSelector iaFloorNumber={iaFloorNumber} />
+          <FloorPOIs blueDotCoordinate={blueDotCoordinate} />
         </MapView>
         <Pressable style={styles.mapBackButton} onPress={closeMapView}>
           <Text style={styles.secondaryButtonText}>Back</Text>
